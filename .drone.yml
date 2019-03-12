@@ -1,0 +1,57 @@
+kind: pipeline
+name: ubuntu
+
+steps:
+- name: vppbuild
+  image: index.docker.io/snergster/vpp-opensuse15
+  commands:
+  - git fetch --tags || true
+  - make UNATTENDED=yes verify
+  when:
+    event:
+    - push
+    - pull_request
+- name: vppopensusepushonly
+  image: index.docker.io/snergster/vpp-opensuse15
+  commands:
+  - echo 'push test'
+  when:
+    event:
+    - push
+
+---
+kind: pipeline
+name: centos
+
+steps:
+- name: vppbuildpullcentos
+  image: index.docker.io/snergster/vpp-centos
+  commands:
+  - git fetch --tags || true
+  - curl -s https://packagecloud.io/install/repositories/fdio/master/script.rpm.sh | sudo bash
+  - yum -y install vpp-ext-deps || true
+  - make UNATTENDED=yes verify
+  when:
+    event:
+    - pull_request
+    - push
+- name: vppbuildpushcentos
+  image: index.docker.io/snergster/vpp-centos
+  commands:
+  - echo 'push only    make UNATTENDED=yes verify'
+  when:
+    event:
+    - push
+---
+kind: pipeline
+name: ubuntu16
+
+steps:
+- name: vppbuildxenial
+  image: index.docker.io/snergster/vpp-ubuntu16
+  commands:
+  - git fetch --tags || true
+  - make UNATTENDED=yes verify
+  when:
+    event:
+    - push
