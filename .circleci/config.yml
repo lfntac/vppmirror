@@ -1,0 +1,130 @@
+version: 2
+jobs:
+  ubuntu16:
+    docker:
+      - image: snergster/vpp-ubuntu16
+    steps:
+      - run:
+          command: |
+            sudo apt-get update -qq
+            sudo apt-get install moreutils -y
+      - run:
+          name: Cache Prep
+          command: |
+            sudo mkdir -p /var/ccache
+      - restore_cache:
+          keys:
+            - ccache-v6-{{ .Environment.CIRCLE_JOB }}-{{ .Environment.CIRCLE_BRANCH }}
+      - run:
+          name: ccache setup
+          command: |
+            ccache --version
+            ccache --show-stats
+            ccache --zero-stats
+            ccache --max-size=2G
+      - checkout
+      - run: curl -s https://packagecloud.io/install/repositories/fdio/master/script.deb.sh | sudo bash
+      - run: apt-get update -qq && sudo apt-get -y --force-yes install vpp-ext-deps
+      - run: 
+          name: installdep
+          command: |
+            make UNATTENDED=yes install-dep
+      - run: 
+          name: ccache check
+          command: |
+            printenv
+            unset CCACHE_READONLY
+            whoami
+            printenv
+            echo '*****************************'
+            unset CCACHE_READONLY;make UNATTENDED=yes verify
+      - run:
+          name: ccache stats
+          command: |
+            export CCACHE_DIR=/var/ccache
+            ccache --show-stats
+      - save_cache:
+          key: ccache-v6-{{ .Environment.CIRCLE_JOB }}-{{ .Environment.CIRCLE_BRANCH }}
+          paths:
+            - /var/ccache
+  centos7:
+    docker:
+      - image: snergster/vpp-centos
+    steps:
+      - restore_cache:
+          keys:
+            - ccache-v6-{{ .Environment.CIRCLE_JOB }}-{{ .Environment.CIRCLE_BRANCH }}
+      - run:
+          name: ccache setup
+          command: |
+            ccache --version
+            ccache --show-stats
+            ccache --zero-stats
+            ccache --max-size=2G
+      - checkout
+      - run: curl -s https://packagecloud.io/install/repositories/fdio/master/script.rpm.sh | sudo bash
+      - run: yum update -y; yum -y install vpp-ext-deps moreutils
+      - run:
+          name: verify with cache
+          command: |
+            printenv
+            unset CCACHE_READONLY
+            whoami
+            printenv
+            unset CCACHE_READONLY;make UNATTENDED=yes verify
+      - run:
+          name: ccache stats
+          command: |
+            export CCACHE_DIR=/var/ccache
+            ccache --show-stats
+      - save_cache:
+          key: ccache-v6-{{ .Environment.CIRCLE_JOB }}-{{ .Environment.CIRCLE_BRANCH }}
+          paths:
+            - /var/ccache
+
+  ubuntu18:
+    docker:
+      - image: snergster/vpp-ubuntu18
+    steps:
+      - restore_cache:
+          keys:
+            - ccache-v6-{{ .Environment.CIRCLE_JOB }}-{{ .Environment.CIRCLE_BRANCH }}
+      - run:
+          name: ccache setup
+          command: |
+            ccache --version
+            ccache --show-stats
+            ccache --zero-stats
+            ccache --max-size=2G
+      - checkout
+      - run:
+          name: printenv
+          command: |
+            printenv
+            unset CCACHE_READONLY
+            whoami
+            printenv
+      - run: curl -s https://packagecloud.io/install/repositories/fdio/master/script.deb.sh | sudo bash
+      - run: apt-get update -qq && sudo apt-get -y --force-yes install vpp-ext-deps
+      - run: 
+          name: installdep
+          command: |
+            make UNATTENDED=yes install-dep
+      - run: unset CCACHE_READONLY;make pkg-deb
+      - run:
+          name: ccache stats
+          command: |
+            export CCACHE_DIR=/var/ccache
+            ccache --show-stats
+      - save_cache:
+          key: ccache-v6-{{ .Environment.CIRCLE_JOB }}-{{ .Environment.CIRCLE_BRANCH }}
+          paths:
+            - /var/ccache
+
+workflows:
+  version: 2
+  build_and_test:
+    jobs:
+      - ubuntu16
+      - centos7
+      - ubuntu18
