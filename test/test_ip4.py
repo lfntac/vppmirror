@@ -22,6 +22,14 @@ from vpp_sub_interface import VppSubInterface, VppDot1QSubint, VppDot1ADSubint
 class TestIPv4(VppTestCase):
     """ IPv4 Test Case """
 
+    @classmethod
+    def setUpClass(cls):
+        super(TestIPv4, cls).setUpClass()
+
+    @classmethod
+    def tearDownClass(cls):
+        super(TestIPv4, cls).tearDownClass()
+
     def setUp(self):
         """
         Perform test setup before test case.
@@ -74,9 +82,10 @@ class TestIPv4(VppTestCase):
     def tearDown(self):
         """Run standard test teardown and log ``show ip arp``."""
         super(TestIPv4, self).tearDown()
-        if not self.vpp_dead:
-            self.logger.info(self.vapi.cli("show ip arp"))
-            # info(self.vapi.cli("show ip fib"))  # many entries
+
+    def show_commands_at_teardown(self):
+        self.logger.info(self.vapi.cli("show ip arp"))
+        # info(self.vapi.cli("show ip fib"))  # many entries
 
     def config_fib_entries(self, count):
         """For each interface add to the FIB table *count* routes to
@@ -228,6 +237,14 @@ class TestIPv4(VppTestCase):
 
 class TestICMPEcho(VppTestCase):
     """ ICMP Echo Test Case """
+
+    @classmethod
+    def setUpClass(cls):
+        super(TestICMPEcho, cls).setUpClass()
+
+    @classmethod
+    def tearDownClass(cls):
+        super(TestICMPEcho, cls).tearDownClass()
 
     def setUp(self):
         super(TestICMPEcho, self).setUp()
@@ -442,6 +459,10 @@ class TestIPv4FibCrud(VppTestCase):
             super(TestIPv4FibCrud, cls).tearDownClass()
             raise
 
+    @classmethod
+    def tearDownClass(cls):
+        super(TestIPv4FibCrud, cls).tearDownClass()
+
     def setUp(self):
         super(TestIPv4FibCrud, self).setUp()
         self.reset_packet_infos()
@@ -568,6 +589,14 @@ class TestIPv4FibCrud(VppTestCase):
 class TestIPNull(VppTestCase):
     """ IPv4 routes via NULL """
 
+    @classmethod
+    def setUpClass(cls):
+        super(TestIPNull, cls).setUpClass()
+
+    @classmethod
+    def tearDownClass(cls):
+        super(TestIPNull, cls).tearDownClass()
+
     def setUp(self):
         super(TestIPNull, self).setUp()
 
@@ -674,6 +703,14 @@ class TestIPNull(VppTestCase):
 class TestIPDisabled(VppTestCase):
     """ IPv4 disabled """
 
+    @classmethod
+    def setUpClass(cls):
+        super(TestIPDisabled, cls).setUpClass()
+
+    @classmethod
+    def tearDownClass(cls):
+        super(TestIPDisabled, cls).tearDownClass()
+
     def setUp(self):
         super(TestIPDisabled, self).setUp()
 
@@ -762,13 +799,21 @@ class TestIPDisabled(VppTestCase):
 class TestIPSubNets(VppTestCase):
     """ IPv4 Subnets """
 
+    @classmethod
+    def setUpClass(cls):
+        super(TestIPSubNets, cls).setUpClass()
+
+    @classmethod
+    def tearDownClass(cls):
+        super(TestIPSubNets, cls).tearDownClass()
+
     def setUp(self):
         super(TestIPSubNets, self).setUp()
 
         # create a 2 pg interfaces
         self.create_pg_interfaces(range(2))
 
-        # pg0 we will use to experiemnt
+        # pg0 we will use to experiment
         self.pg0.admin_up()
 
         # pg1 is setup normally
@@ -875,6 +920,14 @@ class TestIPSubNets(VppTestCase):
 class TestIPLoadBalance(VppTestCase):
     """ IPv4 Load-Balancing """
 
+    @classmethod
+    def setUpClass(cls):
+        super(TestIPLoadBalance, cls).setUpClass()
+
+    @classmethod
+    def tearDownClass(cls):
+        super(TestIPLoadBalance, cls).tearDownClass()
+
     def setUp(self):
         super(TestIPLoadBalance, self).setUp()
 
@@ -899,9 +952,13 @@ class TestIPLoadBalance(VppTestCase):
         input.add_stream(pkts)
         self.pg_enable_capture(self.pg_interfaces)
         self.pg_start()
+        rxs = []
         for oo in outputs:
             rx = oo._get_capture(1)
             self.assertNotEqual(0, len(rx))
+            for r in rx:
+                rxs.append(r)
+        return rxs
 
     def send_and_expect_one_itf(self, input, pkts, itf):
         input.add_stream(pkts)
@@ -963,7 +1020,7 @@ class TestIPLoadBalance(VppTestCase):
         #    src,dst
         # We are not going to ensure equal amounts of packets across each link,
         # since the hash algorithm is statistical and therefore this can never
-        # be guaranteed. But wuth 64 different packets we do expect some
+        # be guaranteed. But with 64 different packets we do expect some
         # balancing. So instead just ensure there is traffic on each link.
         #
         self.send_and_expect_load_balancing(self.pg0, port_ip_pkts,
@@ -1038,6 +1095,53 @@ class TestIPLoadBalance(VppTestCase):
                                              self.pg3, self.pg4])
 
         #
+        # bring down pg1 expect LB to adjust to use only those that are pu
+        #
+        self.pg1.link_down()
+
+        rx = self.send_and_expect_load_balancing(self.pg0, src_pkts,
+                                                 [self.pg2, self.pg3,
+                                                  self.pg4])
+        self.assertEqual(len(src_pkts), len(rx))
+
+        #
+        # bring down pg2 expect LB to adjust to use only those that are pu
+        #
+        self.pg2.link_down()
+
+        rx = self.send_and_expect_load_balancing(self.pg0, src_pkts,
+                                                 [self.pg3, self.pg4])
+        self.assertEqual(len(src_pkts), len(rx))
+
+        #
+        # bring the links back up - expect LB over all again
+        #
+        self.pg1.link_up()
+        self.pg2.link_up()
+
+        rx = self.send_and_expect_load_balancing(self.pg0, src_pkts,
+                                                 [self.pg1, self.pg2,
+                                                  self.pg3, self.pg4])
+        self.assertEqual(len(src_pkts), len(rx))
+
+        #
+        # The same link-up/down but this time admin state
+        #
+        self.pg1.admin_down()
+        self.pg2.admin_down()
+        rx = self.send_and_expect_load_balancing(self.pg0, src_pkts,
+                                                 [self.pg3, self.pg4])
+        self.assertEqual(len(src_pkts), len(rx))
+        self.pg1.admin_up()
+        self.pg2.admin_up()
+        self.pg1.resolve_arp()
+        self.pg2.resolve_arp()
+        rx = self.send_and_expect_load_balancing(self.pg0, src_pkts,
+                                                 [self.pg1, self.pg2,
+                                                  self.pg3, self.pg4])
+        self.assertEqual(len(src_pkts), len(rx))
+
+        #
         # Recursive prefixes
         #  - testing that 2 stages of load-balancing, no choices
         #
@@ -1060,14 +1164,52 @@ class TestIPLoadBalance(VppTestCase):
         route_1_1_1_2.add_vpp_config()
 
         #
-        # inject the packet on pg0 - expect load-balancing across all 4 paths
+        # inject the packet on pg0 - rx only on via routes output interface
         #
         self.vapi.cli("clear trace")
         self.send_and_expect_one_itf(self.pg0, port_pkts, self.pg3)
 
+        #
+        # Add a LB route in the presence of a down link - expect no
+        # packets over the down link
+        #
+        self.pg3.link_down()
+
+        route_10_0_0_3 = VppIpRoute(self, "10.0.0.3", 32,
+                                    [VppRoutePath(self.pg3.remote_ip4,
+                                                  self.pg3.sw_if_index),
+                                     VppRoutePath(self.pg4.remote_ip4,
+                                                  self.pg4.sw_if_index)])
+        route_10_0_0_3.add_vpp_config()
+
+        port_pkts = []
+        for ii in range(257):
+            port_pkts.append(Ether(src=self.pg0.remote_mac,
+                                   dst=self.pg0.local_mac) /
+                             IP(dst="10.0.0.3", src="20.0.0.2") /
+                             UDP(sport=1234, dport=1234 + ii) /
+                             Raw('\xa5' * 100))
+
+        self.send_and_expect_one_itf(self.pg0, port_pkts, self.pg4)
+
+        # bring the link back up
+        self.pg3.link_up()
+
+        rx = self.send_and_expect_load_balancing(self.pg0, port_pkts,
+                                                 [self.pg3, self.pg4])
+        self.assertEqual(len(src_pkts), len(rx))
+
 
 class TestIPVlan0(VppTestCase):
     """ IPv4 VLAN-0 """
+
+    @classmethod
+    def setUpClass(cls):
+        super(TestIPVlan0, cls).setUpClass()
+
+    @classmethod
+    def tearDownClass(cls):
+        super(TestIPVlan0, cls).tearDownClass()
 
     def setUp(self):
         super(TestIPVlan0, self).setUp()
@@ -1109,6 +1251,14 @@ class TestIPVlan0(VppTestCase):
 
 class TestIPPunt(VppTestCase):
     """ IPv4 Punt Police/Redirect """
+
+    @classmethod
+    def setUpClass(cls):
+        super(TestIPPunt, cls).setUpClass()
+
+    @classmethod
+    def tearDownClass(cls):
+        super(TestIPPunt, cls).tearDownClass()
 
     def setUp(self):
         super(TestIPPunt, self).setUp()
@@ -1160,7 +1310,7 @@ class TestIPPunt(VppTestCase):
         self.pg_start()
 
         #
-        # the number of packet recieved should be greater than 0,
+        # the number of packet received should be greater than 0,
         # but not equal to the number sent, since some were policed
         #
         rx = self.pg1._get_capture(1)
@@ -1168,7 +1318,7 @@ class TestIPPunt(VppTestCase):
         self.assertLess(len(rx), len(pkts))
 
         #
-        # remove the poilcer. back to full rx
+        # remove the policer. back to full rx
         #
         self.vapi.ip_punt_police(policer.policer_index, is_add=0)
         self.vapi.policer_add_del(b"ip4-punt", 400, 0, 10, 0,
@@ -1235,6 +1385,14 @@ class TestIPPunt(VppTestCase):
 
 class TestIPDeag(VppTestCase):
     """ IPv4 Deaggregate Routes """
+
+    @classmethod
+    def setUpClass(cls):
+        super(TestIPDeag, cls).setUpClass()
+
+    @classmethod
+    def tearDownClass(cls):
+        super(TestIPDeag, cls).tearDownClass()
 
     def setUp(self):
         super(TestIPDeag, self).setUp()
@@ -1344,6 +1502,14 @@ class TestIPDeag(VppTestCase):
 
 class TestIPInput(VppTestCase):
     """ IPv4 Input Exceptions """
+
+    @classmethod
+    def setUpClass(cls):
+        super(TestIPInput, cls).setUpClass()
+
+    @classmethod
+    def tearDownClass(cls):
+        super(TestIPInput, cls).tearDownClass()
 
     def setUp(self):
         super(TestIPInput, self).setUp()
@@ -1510,6 +1676,14 @@ class TestIPInput(VppTestCase):
 class TestIPDirectedBroadcast(VppTestCase):
     """ IPv4 Directed Broadcast """
 
+    @classmethod
+    def setUpClass(cls):
+        super(TestIPDirectedBroadcast, cls).setUpClass()
+
+    @classmethod
+    def tearDownClass(cls):
+        super(TestIPDirectedBroadcast, cls).tearDownClass()
+
     def setUp(self):
         super(TestIPDirectedBroadcast, self).setUp()
 
@@ -1578,6 +1752,14 @@ class TestIPDirectedBroadcast(VppTestCase):
 class TestIPLPM(VppTestCase):
     """ IPv4 longest Prefix Match """
 
+    @classmethod
+    def setUpClass(cls):
+        super(TestIPLPM, cls).setUpClass()
+
+    @classmethod
+    def tearDownClass(cls):
+        super(TestIPLPM, cls).tearDownClass()
+
     def setUp(self):
         super(TestIPLPM, self).setUp()
 
@@ -1640,6 +1822,10 @@ class TestIPv4Frag(VppTestCase):
             i.admin_up()
             i.config_ip4()
             i.resolve_arp()
+
+    @classmethod
+    def tearDownClass(cls):
+        super(TestIPv4Frag, cls).tearDownClass()
 
     def test_frag_large_packets(self):
         """ Fragmentation of large packets """

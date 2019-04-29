@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016 Cisco and/or its affiliates.
+ * Copyright (c) 2016-2019 Cisco and/or its affiliates.
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at:
@@ -1837,6 +1837,7 @@ setsockopt (int fd, int level, int optname,
 			     (void *) optval, &optlen);
 	      break;
 	    case TCP_CONGESTION:
+	    case TCP_CORK:
 	      /* Ignore */
 	      rv = 0;
 	      break;
@@ -2389,8 +2390,11 @@ ldp_constructor (void)
 {
   swrap_constructor ();
   if (ldp_init () != 0)
-    fprintf (stderr, "\nLDP<%d>: ERROR: ldp_constructor: failed!\n",
-	     getpid ());
+    {
+      fprintf (stderr, "\nLDP<%d>: ERROR: ldp_constructor: failed!\n",
+	       getpid ());
+      _exit (1);
+    }
   else if (LDP_DEBUG > 0)
     clib_warning ("LDP<%d>: LDP constructor: done!\n", getpid ());
 }

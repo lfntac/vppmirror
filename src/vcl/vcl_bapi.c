@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018 Cisco and/or its affiliates.
+ * Copyright (c) 2018-2019 Cisco and/or its affiliates.
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this
  * You may obtain a copy of the License at:
@@ -65,7 +65,7 @@ static int
 vcl_segment_attach (u64 segment_handle, char *name, ssvm_segment_type_t type,
 		    int fd)
 {
-  svm_fifo_segment_create_args_t _a, *a = &_a;
+  fifo_segment_create_args_t _a, *a = &_a;
   int rv;
 
   memset (a, 0, sizeof (*a));
@@ -75,7 +75,7 @@ vcl_segment_attach (u64 segment_handle, char *name, ssvm_segment_type_t type,
   if (type == SSVM_SEGMENT_MEMFD)
     a->memfd_fd = fd;
 
-  if ((rv = svm_fifo_segment_attach (&vcm->segment_main, a)))
+  if ((rv = fifo_segment_attach (&vcm->segment_main, a)))
     {
       clib_warning ("svm_fifo_segment_attach ('%s') failed", name);
       return rv;
@@ -88,15 +88,15 @@ vcl_segment_attach (u64 segment_handle, char *name, ssvm_segment_type_t type,
 static void
 vcl_segment_detach (u64 segment_handle)
 {
-  svm_fifo_segment_main_t *sm = &vcm->segment_main;
-  svm_fifo_segment_private_t *segment;
+  fifo_segment_main_t *sm = &vcm->segment_main;
+  fifo_segment_t *segment;
   u32 segment_index;
 
   segment_index = vcl_segment_table_lookup (segment_handle);
   if (segment_index == (u32) ~ 0)
     return;
-  segment = svm_fifo_segment_get_segment (sm, segment_index);
-  svm_fifo_segment_delete (sm, segment);
+  segment = fifo_segment_get_segment (sm, segment_index);
+  fifo_segment_delete (sm, segment);
   vcl_segment_table_del (segment_handle);
   VDBG (0, "detached segment %u handle %u", segment_index, segment_handle);
 }
@@ -118,9 +118,8 @@ vl_api_application_attach_reply_t_handler (vl_api_application_attach_reply_t *
 
   if (mp->retval)
     {
-      clib_warning ("VCL<%d>: attach failed: %U", getpid (),
-		    format_api_error, ntohl (mp->retval));
-      return;
+      VERR ("attach failed: %U", format_api_error, ntohl (mp->retval));
+      goto failed;
     }
 
   wrk->app_event_queue = uword_to_pointer (mp->app_event_queue_address,
@@ -128,8 +127,8 @@ vl_api_application_attach_reply_t_handler (vl_api_application_attach_reply_t *
   segment_handle = clib_net_to_host_u64 (mp->segment_handle);
   if (segment_handle == VCL_INVALID_SEGMENT_HANDLE)
     {
-      clib_warning ("invalid segment handle");
-      return;
+      VERR ("invalid segment handle");
+      goto failed;
     }
 
   if (mp->n_fds)
@@ -141,12 +140,12 @@ vl_api_application_attach_reply_t_handler (vl_api_application_attach_reply_t *
 	if (vcl_segment_attach (vcl_vpp_worker_segment_handle (0),
 				"vpp-mq-seg", SSVM_SEGMENT_MEMFD,
 				fds[n_fds++]))
-	  return;
+	  goto failed;
 
       if (mp->fd_flags & SESSION_FD_F_MEMFD_SEGMENT)
 	if (vcl_segment_attach (segment_handle, (char *) mp->segment_name,
 				SSVM_SEGMENT_MEMFD, fds[n_fds++]))
-	  return;
+	  goto failed;
 
       if (mp->fd_flags & SESSION_FD_F_MQ_EVENTFD)
 	{
@@ -161,11 +160,15 @@ vl_api_application_attach_reply_t_handler (vl_api_application_attach_reply_t *
     {
       if (vcl_segment_attach (segment_handle, (char *) mp->segment_name,
 			      SSVM_SEGMENT_SHM, -1))
-	return;
+	goto failed;
     }
 
   vcm->app_index = clib_net_to_host_u32 (mp->app_index);
   vcm->app_state = STATE_APP_ATTACHED;
+  return;
+
+failed:
+  vcm->app_state = STATE_APP_FAILED;
 }
 
 static void

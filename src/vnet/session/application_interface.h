@@ -17,9 +17,9 @@
 
 #include <vlibmemory/api.h>
 #include <svm/message_queue.h>
-#include <svm/svm_fifo_segment.h>
 #include <vnet/session/session_types.h>
 #include <vnet/tls/tls_test.h>
+#include <svm/fifo_segment.h>
 
 typedef struct _stream_session_cb_vft
 {
@@ -211,6 +211,7 @@ typedef enum session_fd_flag_
 #undef _
 } session_fd_flag_t;
 
+int parse_uri (char *uri, session_endpoint_cfg_t * sep);
 int vnet_bind_uri (vnet_listen_args_t *);
 int vnet_unbind_uri (vnet_unlisten_args_t * a);
 int vnet_connect_uri (vnet_connect_args_t * a);
@@ -283,9 +284,7 @@ typedef struct session_accepted_msg_
   uword server_tx_fifo;
   u64 segment_handle;
   uword vpp_event_queue_address;
-  u16 port;
-  u8 is_ip4;
-  u8 ip[16];
+  transport_endpoint_t rmt;
 } __clib_packed session_accepted_msg_t;
 
 typedef struct session_accepted_reply_msg_
@@ -314,9 +313,7 @@ typedef struct session_connected_msg_
   u32 segment_size;
   u8 segment_name_length;
   u8 segment_name[64];
-  u8 lcl_ip[16];
-  u8 is_ip4;
-  u16 lcl_port;
+  transport_endpoint_t lcl;
 } __clib_packed session_connected_msg_t;
 
 typedef struct session_disconnected_msg_
@@ -459,7 +456,7 @@ app_send_dgram_raw (svm_fifo_t * f, app_session_transport_t * at,
   session_dgram_hdr_t hdr;
   int rv;
 
-  max_enqueue = svm_fifo_max_enqueue (f);
+  max_enqueue = svm_fifo_max_enqueue_prod (f);
   if (max_enqueue <= sizeof (session_dgram_hdr_t))
     return 0;
 
@@ -475,9 +472,10 @@ app_send_dgram_raw (svm_fifo_t * f, app_session_transport_t * at,
   rv = svm_fifo_enqueue_nowait (f, sizeof (hdr), (u8 *) & hdr);
   ASSERT (rv == sizeof (hdr));
 
-  if ((rv = svm_fifo_enqueue_nowait (f, actual_write, data)) > 0)
+  rv = svm_fifo_enqueue_nowait (f, actual_write, data);
+  if (do_evt)
     {
-      if (do_evt && svm_fifo_set_event (f))
+      if (rv > 0 && svm_fifo_set_event (f))
 	app_send_io_evt_to_vpp (vpp_evt_q, f->master_session_index, evt_type,
 				noblock);
     }
@@ -499,9 +497,10 @@ app_send_stream_raw (svm_fifo_t * f, svm_msg_q_t * vpp_evt_q, u8 * data,
 {
   int rv;
 
-  if ((rv = svm_fifo_enqueue_nowait (f, len, data)) > 0)
+  rv = svm_fifo_enqueue_nowait (f, len, data);
+  if (do_evt)
     {
-      if (do_evt && svm_fifo_set_event (f))
+      if (rv > 0 && svm_fifo_set_event (f))
 	app_send_io_evt_to_vpp (vpp_evt_q, f->master_session_index, evt_type,
 				noblock);
     }
@@ -531,7 +530,7 @@ app_recv_dgram_raw (svm_fifo_t * f, u8 * buf, u32 len,
   u32 max_deq;
   int rv;
 
-  max_deq = svm_fifo_max_dequeue (f);
+  max_deq = svm_fifo_max_dequeue_cons (f);
   if (max_deq < sizeof (session_dgram_hdr_t))
     {
       if (clear_evt)

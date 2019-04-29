@@ -144,6 +144,10 @@ class TestACLplugin(VppTestCase):
             super(TestACLplugin, cls).tearDownClass()
             raise
 
+    @classmethod
+    def tearDownClass(cls):
+        super(TestACLplugin, cls).tearDownClass()
+
     def setUp(self):
         super(TestACLplugin, self).setUp()
         self.reset_packet_infos()
@@ -153,21 +157,22 @@ class TestACLplugin(VppTestCase):
         Show various debug prints after each test.
         """
         super(TestACLplugin, self).tearDown()
-        if not self.vpp_dead:
-            cli = "show vlib graph l2-input-feat-arc"
-            self.logger.info(self.vapi.ppcli(cli))
-            cli = "show vlib graph l2-input-feat-arc-end"
-            self.logger.info(self.vapi.ppcli(cli))
-            cli = "show vlib graph l2-output-feat-arc"
-            self.logger.info(self.vapi.ppcli(cli))
-            cli = "show vlib graph l2-output-feat-arc-end"
-            self.logger.info(self.vapi.ppcli(cli))
-            self.logger.info(self.vapi.ppcli("show l2fib verbose"))
-            self.logger.info(self.vapi.ppcli("show acl-plugin acl"))
-            self.logger.info(self.vapi.ppcli("show acl-plugin interface"))
-            self.logger.info(self.vapi.ppcli("show acl-plugin tables"))
-            self.logger.info(self.vapi.ppcli("show bridge-domain %s detail"
-                                             % self.bd_id))
+
+    def show_commands_at_teardown(self):
+        cli = "show vlib graph l2-input-feat-arc"
+        self.logger.info(self.vapi.ppcli(cli))
+        cli = "show vlib graph l2-input-feat-arc-end"
+        self.logger.info(self.vapi.ppcli(cli))
+        cli = "show vlib graph l2-output-feat-arc"
+        self.logger.info(self.vapi.ppcli(cli))
+        cli = "show vlib graph l2-output-feat-arc-end"
+        self.logger.info(self.vapi.ppcli(cli))
+        self.logger.info(self.vapi.ppcli("show l2fib verbose"))
+        self.logger.info(self.vapi.ppcli("show acl-plugin acl"))
+        self.logger.info(self.vapi.ppcli("show acl-plugin interface"))
+        self.logger.info(self.vapi.ppcli("show acl-plugin tables"))
+        self.logger.info(self.vapi.ppcli("show bridge-domain %s detail"
+                                         % self.bd_id))
 
     def create_rule(self, ip=0, permit_deny=0, ports=PORTS_ALL, proto=-1,
                     s_prefix=0, s_ip='\x00\x00\x00\x00',

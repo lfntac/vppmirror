@@ -23,6 +23,9 @@ ct_enable_disable_main_pre_input_node (u8 is_add)
 {
   u32 n_conns;
 
+  if (!vlib_num_workers ())
+    return;
+
   n_conns = pool_elts (connections);
   if (n_conns > 2)
     return;
@@ -88,10 +91,10 @@ ct_session_endpoint (session_t * ll, session_endpoint_t * sep)
 int
 ct_session_connect_notify (session_t * ss)
 {
-  svm_fifo_segment_private_t *seg;
   ct_connection_t *sct, *cct;
   app_worker_t *client_wrk;
   segment_manager_t *sm;
+  fifo_segment_t *seg;
   u64 segment_handle;
   int is_fail = 0;
   session_t *cs;
@@ -164,11 +167,11 @@ ct_init_local_session (app_worker_t * client_wrk, app_worker_t * server_wrk,
 		       ct_connection_t * ct, session_t * ls, session_t * ll)
 {
   u32 round_rx_fifo_sz, round_tx_fifo_sz, sm_index, seg_size;
-  segment_manager_properties_t *props;
-  svm_fifo_segment_private_t *seg;
+  segment_manager_props_t *props;
   application_t *server;
   segment_manager_t *sm;
   u32 margin = 16 << 10;
+  fifo_segment_t *seg;
   u64 segment_handle;
   int seg_index, rv;
 
@@ -472,6 +475,19 @@ ct_custom_tx (void *session)
   return ct_session_tx (s);
 }
 
+static int
+ct_app_rx_evt (transport_connection_t * tc)
+{
+  ct_connection_t *ct = (ct_connection_t *) tc, *peer_ct;
+  session_t *ps;
+
+  peer_ct = ct_connection_get (ct->peer_index);
+  if (!peer_ct)
+    return -1;
+  ps = session_get (peer_ct->c_s_index, peer_ct->c_thread_index);
+  return session_dequeue_notify (ps);
+}
+
 static u8 *
 format_ct_listener (u8 * s, va_list * args)
 {
@@ -532,6 +548,7 @@ const static transport_proto_vft_t cut_thru_proto = {
   .close = ct_session_close,
   .get_connection = ct_session_get,
   .custom_tx = ct_custom_tx,
+  .app_rx_evt = ct_app_rx_evt,
   .tx_type = TRANSPORT_TX_INTERNAL,
   .service_type = TRANSPORT_SERVICE_APP,
   .format_listener = format_ct_listener,

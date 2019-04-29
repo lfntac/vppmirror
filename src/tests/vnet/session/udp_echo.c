@@ -27,9 +27,9 @@
 #include <vlibapi/api.h>
 #include <vlibmemory/api.h>
 #include <vpp/api/vpe_msg_enum.h>
-#include <svm/svm_fifo_segment.h>
 #include <pthread.h>
 #include <vnet/session/application_interface.h>
+#include <svm/fifo_segment.h>
 
 #define vl_typedefs		/* define message structures */
 #include <vpp/api/vpe_all_api_h.h>
@@ -79,7 +79,7 @@ typedef struct
   uword *session_index_by_vpp_handles;
 
   /* fifo segment */
-  svm_fifo_segment_private_t *seg;
+  fifo_segment_t *seg;
 
   /* intermediate rx buffer */
   u8 *rx_buf;
@@ -121,7 +121,7 @@ typedef struct
   /* VNET_API_ERROR_FOO -> "Foo" hash table */
   uword *error_string_by_error_number;
 
-  svm_fifo_segment_main_t segment_main;
+  fifo_segment_main_t segment_main;
 
   u8 *connect_test_data;
 
@@ -334,9 +334,9 @@ static void
 vl_api_application_attach_reply_t_handler (vl_api_application_attach_reply_t *
 					   mp)
 {
-  svm_fifo_segment_create_args_t _a = { 0 }, *a = &_a;
+  fifo_segment_create_args_t _a = { 0 }, *a = &_a;
   udp_echo_main_t *utm = &udp_echo_main;
-  svm_fifo_segment_main_t *sm = &utm->segment_main;
+  fifo_segment_main_t *sm = &utm->segment_main;
   int rv;
 
   if (mp->retval)
@@ -358,7 +358,7 @@ vl_api_application_attach_reply_t_handler (vl_api_application_attach_reply_t *
   ASSERT (mp->app_event_queue_address);
 
   /* Attach to the segment vpp created */
-  rv = svm_fifo_segment_attach (sm, a);
+  rv = fifo_segment_attach (sm, a);
   if (rv)
     {
       clib_warning ("svm_fifo_segment_attach ('%s') failed",
@@ -454,7 +454,7 @@ cut_through_thread_fn (void *arg)
 	  else
 	    {
 	      /* We don't do anything with the data, drop it */
-	      actual_transfer = svm_fifo_max_dequeue (rx_fifo);
+	      actual_transfer = svm_fifo_max_dequeue_cons (rx_fifo);
 	      svm_fifo_dequeue_drop (rx_fifo, actual_transfer);
 	    }
 	}
@@ -514,10 +514,10 @@ session_accepted_handler (session_accepted_msg_t * mp)
   tx_fifo->client_session_index = session_index;
   session->rx_fifo = rx_fifo;
   session->tx_fifo = tx_fifo;
-  clib_memcpy_fast (&session->transport.rmt_ip, mp->ip,
+  clib_memcpy_fast (&session->transport.rmt_ip, &mp->rmt.ip,
 		    sizeof (ip46_address_t));
-  session->transport.is_ip4 = mp->is_ip4;
-  session->transport.rmt_port = mp->port;
+  session->transport.is_ip4 = mp->rmt.is_ip4;
+  session->transport.rmt_port = mp->rmt.port;
 
   hash_set (utm->session_index_by_vpp_handles, mp->handle, session_index);
   if (pool_elts (utm->sessions) && (pool_elts (utm->sessions) % 20000) == 0)
@@ -618,10 +618,10 @@ session_connected_handler (session_connected_msg_t * mp)
 
       session->rx_fifo->client_session_index = session->session_index;
       session->tx_fifo->client_session_index = session->session_index;
-      clib_memcpy_fast (&session->transport.lcl_ip, mp->lcl_ip,
+      clib_memcpy_fast (&session->transport.lcl_ip, &mp->lcl.ip,
 			sizeof (ip46_address_t));
-      session->transport.is_ip4 = mp->is_ip4;
-      session->transport.lcl_port = mp->lcl_port;
+      session->transport.is_ip4 = mp->lcl.is_ip4;
+      session->transport.lcl_port = mp->lcl.port;
 
       unformat_init_vector (input, utm->connect_uri);
       if (!unformat (input, "%U", unformat_uri, sep))
@@ -724,7 +724,7 @@ send_test_chunk (udp_echo_main_t * utm, app_session_t * s, u32 bytes)
   test_buf_offset = utm->bytes_sent % test_buf_len;
   bytes_this_chunk = clib_min (test_buf_len - test_buf_offset,
 			       utm->bytes_to_send);
-  enq_space = svm_fifo_max_enqueue (s->tx_fifo);
+  enq_space = svm_fifo_max_enqueue_prod (s->tx_fifo);
   bytes_this_chunk = clib_min (bytes_this_chunk, enq_space);
 
   written = app_send (s, test_data + test_buf_offset, bytes_this_chunk,
@@ -841,24 +841,24 @@ client_test (udp_echo_main_t * utm)
 static void
 vl_api_map_another_segment_t_handler (vl_api_map_another_segment_t * mp)
 {
-  svm_fifo_segment_create_args_t _a, *a = &_a;
+  fifo_segment_create_args_t _a, *a = &_a;
   udp_echo_main_t *utm = &udp_echo_main;
-  svm_fifo_segment_main_t *sm = &utm->segment_main;
-  svm_fifo_segment_private_t *seg;
+  fifo_segment_main_t *sm = &utm->segment_main;
+  fifo_segment_t *seg;
   int rv;
 
   clib_memset (a, 0, sizeof (*a));
   a->segment_name = (char *) mp->segment_name;
   a->segment_size = mp->segment_size;
   /* Attach to the segment vpp created */
-  rv = svm_fifo_segment_attach (sm, a);
+  rv = fifo_segment_attach (sm, a);
   if (rv)
     {
       clib_warning ("svm_fifo_segment_attach ('%s') failed",
 		    mp->segment_name);
       return;
     }
-  seg = svm_fifo_segment_get_segment (sm, a->new_segment_indices[0]);
+  seg = fifo_segment_get_segment (sm, a->new_segment_indices[0]);
   clib_warning ("Mapped new segment '%s' size %d", seg->ssvm.name,
 		seg->ssvm.ssvm_size);
   hash_set (utm->segments_table, clib_net_to_host_u64 (mp->segment_handle),
@@ -869,8 +869,8 @@ static void
 vl_api_unmap_segment_t_handler (vl_api_unmap_segment_t * mp)
 {
   udp_echo_main_t *utm = &udp_echo_main;
-  svm_fifo_segment_main_t *sm = &utm->segment_main;
-  svm_fifo_segment_private_t *seg;
+  fifo_segment_main_t *sm = &utm->segment_main;
+  fifo_segment_t *seg;
   uword *seg_indexp;
   u64 segment_handle;
 
@@ -882,8 +882,8 @@ vl_api_unmap_segment_t_handler (vl_api_unmap_segment_t * mp)
       return;
     }
   hash_unset (utm->segments_table, segment_handle);
-  seg = svm_fifo_segment_get_segment (sm, (u32) seg_indexp[0]);
-  svm_fifo_segment_delete (sm, seg);
+  seg = fifo_segment_get_segment (sm, (u32) seg_indexp[0]);
+  fifo_segment_delete (sm, seg);
   clib_warning ("Unmapped segment '%s'", segment_handle);
 }
 
@@ -975,7 +975,8 @@ server_handle_fifo_event_rx (udp_echo_main_t * utm, u32 session_index)
   rx_fifo = session->rx_fifo;
   tx_fifo = session->tx_fifo;
 
-  max_dequeue = svm_fifo_max_dequeue (rx_fifo);
+
+  max_dequeue = svm_fifo_max_dequeue_cons (rx_fifo);
   /* Allow enqueuing of a new event */
   svm_fifo_unset_event (rx_fifo);
 
@@ -1126,7 +1127,7 @@ int
 main (int argc, char **argv)
 {
   udp_echo_main_t *utm = &udp_echo_main;
-  svm_fifo_segment_main_t *sm = &utm->segment_main;
+  fifo_segment_main_t *sm = &utm->segment_main;
   u8 *uri = (u8 *) "udp://6.0.1.1/1234";
   unformat_input_t _argv, *a = &_argv;
   int i_am_server = 1;
@@ -1138,7 +1139,7 @@ main (int argc, char **argv)
 
   clib_mem_init_thread_safe (0, 256 << 20);
 
-  svm_fifo_segment_main_init (sm, HIGH_SEGMENT_BASEVA, 20);
+  fifo_segment_main_init (sm, HIGH_SEGMENT_BASEVA, 20);
 
   vec_validate (utm->rx_buf, 128 << 10);
   utm->session_index_by_vpp_handles = hash_create (0, sizeof (uword));

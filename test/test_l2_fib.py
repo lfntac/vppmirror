@@ -131,6 +131,10 @@ class TestL2fib(VppTestCase):
             super(TestL2fib, cls).tearDownClass()
             raise
 
+    @classmethod
+    def tearDownClass(cls):
+        super(TestL2fib, cls).tearDownClass()
+
     def setUp(self):
         super(TestL2fib, self).setUp()
         self.reset_packet_infos()
@@ -141,10 +145,12 @@ class TestL2fib(VppTestCase):
         """
         super(TestL2fib, self).tearDown()
         if not self.vpp_dead:
-            self.logger.info(self.vapi.ppcli("show l2fib verbose"))
             for bd_id in self.n_brs:
                 self.logger.info(self.vapi.ppcli("show bridge-domain %s detail"
                                                  % bd_id))
+
+    def show_commands_at_teardown(self):
+        self.logger.info(self.vapi.ppcli("show l2fib verbose"))
 
     def create_hosts(self, n_hosts_per_if, subnet):
         """

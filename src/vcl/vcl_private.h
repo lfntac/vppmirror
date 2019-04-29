@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018 Cisco and/or its affiliates.
+ * Copyright (c) 2018-2019 Cisco and/or its affiliates.
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this
  * You may obtain a copy of the License at:
@@ -325,7 +325,7 @@ typedef struct vppcom_main_t_
   /** Mapped segments table */
   uword *segment_table;
 
-  svm_fifo_segment_main_t segment_main;
+  fifo_segment_main_t segment_main;
 
 #ifdef VCL_ELOG
   /* VPP Event-logger */

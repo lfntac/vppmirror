@@ -111,7 +111,7 @@ class TestVxlan(BridgeDomain, VppTestCase):
                                               mcast_sw_if_index=1,
                                               is_add=is_add, vni=vni)
             if r.sw_if_index == 0xffffffff:
-                raise "bad sw_if_index"
+                raise ValueError("bad sw_if_index: ~0")
 
     @classmethod
     def add_shared_mcast_dst_load(cls):
@@ -217,6 +217,10 @@ class TestVxlan(BridgeDomain, VppTestCase):
             super(TestVxlan, cls).tearDownClass()
             raise
 
+    @classmethod
+    def tearDownClass(cls):
+        super(TestVxlan, cls).tearDownClass()
+
     def test_encap_big_packet(self):
         """ Encapsulation test send big frame from pg1
         Verify receipt of encapsulated frames on pg0
@@ -251,11 +255,12 @@ class TestVxlan(BridgeDomain, VppTestCase):
     #  @param self The object pointer.
     def tearDown(self):
         super(TestVxlan, self).tearDown()
-        if not self.vpp_dead:
-            self.logger.info(self.vapi.cli("show bridge-domain 1 detail"))
-            self.logger.info(self.vapi.cli("show bridge-domain 2 detail"))
-            self.logger.info(self.vapi.cli("show bridge-domain 3 detail"))
-            self.logger.info(self.vapi.cli("show vxlan tunnel"))
+
+    def show_commands_at_teardown(self):
+        self.logger.info(self.vapi.cli("show bridge-domain 1 detail"))
+        self.logger.info(self.vapi.cli("show bridge-domain 2 detail"))
+        self.logger.info(self.vapi.cli("show bridge-domain 3 detail"))
+        self.logger.info(self.vapi.cli("show vxlan tunnel"))
 
 
 if __name__ == '__main__':

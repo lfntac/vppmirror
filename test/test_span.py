@@ -9,10 +9,11 @@ from scapy.layers.vxlan import VXLAN
 
 from framework import VppTestCase, VppTestRunner
 from util import Host, ppp
-from vpp_sub_interface import VppDot1QSubint, VppDot1ADSubint
-from vpp_gre_interface import VppGreInterface, VppGre6Interface
-from vpp_papi_provider import L2_VTR_OP
+from vpp_sub_interface import L2_VTR_OP, VppDot1QSubint, VppDot1ADSubint
+from vpp_gre_interface import VppGreInterface
 from collections import namedtuple
+from vpp_papi import VppEnum
+
 
 Tag = namedtuple('Tag', ['dot1', 'vlan'])
 DOT1AD = 0x88A8
@@ -62,8 +63,9 @@ class TestSpan(VppTestCase):
 
     def tearDown(self):
         super(TestSpan, self).tearDown()
-        if not self.vpp_dead:
-            self.logger.info(self.vapi.ppcli("show interface span"))
+
+    def show_commands_at_teardown(self):
+        self.logger.info(self.vapi.ppcli("show interface span"))
 
     def xconnect(self, a, b, is_add=1):
         self.vapi.sw_interface_set_l2_xconnect(a, b, enable=is_add)
@@ -271,8 +273,9 @@ class TestSpan(VppTestCase):
 
         gre_if = VppGreInterface(self, self.pg2.local_ip4,
                                  self.pg2.remote_ip4,
-                                 type=2,
-                                 session=543)
+                                 session=543,
+                                 type=(VppEnum.vl_api_gre_tunnel_type_t.
+                                       GRE_API_TUNNEL_TYPE_ERSPAN))
 
         gre_if.add_vpp_config()
         gre_if.admin_up()
@@ -319,7 +322,8 @@ class TestSpan(VppTestCase):
 
         gre_if = VppGreInterface(self, self.pg2.local_ip4,
                                  self.pg2.remote_ip4,
-                                 type=1)
+                                 type=(VppEnum.vl_api_gre_tunnel_type_t.
+                                       GRE_API_TUNNEL_TYPE_TEB))
 
         gre_if.add_vpp_config()
         gre_if.admin_up()

@@ -86,7 +86,7 @@ class TestGtpu(BridgeDomain, VppTestCase):
 
         self.pg_start()
 
-        # Pick first received frame and check if it's corectly encapsulated.
+        # Pick first received frame and check if it's correctly encapsulated.
         out = self.pg0.get_capture(1)
         pkt = out[0]
         self.check_encapsulation(pkt, self.single_tunnel_bd)
@@ -105,7 +105,7 @@ class TestGtpu(BridgeDomain, VppTestCase):
 
         self.pg_start()
 
-        # Get packet from each tunnel and assert it's corectly encapsulated.
+        # Get packet from each tunnel and assert it's correctly encapsulated.
         out = self.pg0.get_capture(self.n_ucast_tunnels)
         for pkt in out:
             self.check_encapsulation(pkt, self.ucast_flood_bd, True)
@@ -123,7 +123,7 @@ class TestGtpu(BridgeDomain, VppTestCase):
 
         self.pg_start()
 
-        # Pick first received frame and check if it's corectly encapsulated.
+        # Pick first received frame and check if it's correctly encapsulated.
         out = self.pg0.get_capture(1)
         pkt = out[0]
         self.check_encapsulation(pkt, self.mcast_flood_bd,
@@ -168,7 +168,7 @@ class TestGtpu(BridgeDomain, VppTestCase):
                 teid=teid,
                 is_add=is_add)
             if r.sw_if_index == 0xffffffff:
-                raise "bad sw_if_index"
+                raise ValueError("bad sw_if_index: ~0")
 
     @classmethod
     def add_shared_mcast_dst_load(cls):
@@ -278,18 +278,23 @@ class TestGtpu(BridgeDomain, VppTestCase):
             super(TestGtpu, cls).tearDownClass()
             raise
 
+    @classmethod
+    def tearDownClass(cls):
+        super(TestGtpu, cls).tearDownClass()
+
     # Method to define VPP actions before tear down of the test case.
     #  Overrides tearDown method in VppTestCase class.
     #  @param self The object pointer.
     def tearDown(self):
         super(TestGtpu, self).tearDown()
-        if not self.vpp_dead:
-            self.logger.info(self.vapi.cli("show bridge-domain 11 detail"))
-            self.logger.info(self.vapi.cli("show bridge-domain 12 detail"))
-            self.logger.info(self.vapi.cli("show bridge-domain 13 detail"))
-            self.logger.info(self.vapi.cli("show int"))
-            self.logger.info(self.vapi.cli("show gtpu tunnel"))
-            self.logger.info(self.vapi.cli("show trace"))
+
+    def show_commands_at_teardown(self):
+        self.logger.info(self.vapi.cli("show bridge-domain 11 detail"))
+        self.logger.info(self.vapi.cli("show bridge-domain 12 detail"))
+        self.logger.info(self.vapi.cli("show bridge-domain 13 detail"))
+        self.logger.info(self.vapi.cli("show int"))
+        self.logger.info(self.vapi.cli("show gtpu tunnel"))
+        self.logger.info(self.vapi.cli("show trace"))
 
 
 if __name__ == '__main__':

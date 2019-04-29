@@ -9,8 +9,7 @@ from scapy.layers.inet import IP, UDP
 
 from util import Host
 from framework import VppTestCase, VppTestRunner
-from vpp_sub_interface import VppDot1QSubint, VppDot1ADSubint
-from vpp_papi_provider import L2_VTR_OP
+from vpp_sub_interface import L2_VTR_OP, VppDot1QSubint, VppDot1ADSubint
 from collections import namedtuple
 
 Tag = namedtuple('Tag', ['dot1', 'vlan'])
@@ -68,6 +67,10 @@ class TestVtr(VppTestCase):
             super(TestVtr, cls).tearDownClass()
             raise
 
+    @classmethod
+    def tearDownClass(cls):
+        super(TestVtr, cls).tearDownClass()
+
     def setUp(self):
         """
         Clear trace and packet infos before running each test.
@@ -80,10 +83,11 @@ class TestVtr(VppTestCase):
         Show various debug prints after each test.
         """
         super(TestVtr, self).tearDown()
-        if not self.vpp_dead:
-            self.logger.info(self.vapi.ppcli("show l2fib verbose"))
-            self.logger.info(self.vapi.ppcli("show bridge-domain %s detail" %
-                                             self.bd_id))
+
+    def show_commands_at_teardown(self):
+        self.logger.info(self.vapi.ppcli("show l2fib verbose"))
+        self.logger.info(self.vapi.ppcli("show bridge-domain %s detail" %
+                                         self.bd_id))
 
     @classmethod
     def create_hosts_and_learn(cls, count):

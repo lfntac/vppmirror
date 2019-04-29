@@ -92,7 +92,7 @@ typedef struct application_
   session_cb_vft_t cb_fns;
 
   /** Segment manager properties. Shared by all segment managers */
-  segment_manager_properties_t sm_properties;
+  segment_manager_props_t sm_properties;
 
   /** Pool of mappings that keep track of workers associated to this app */
   app_worker_map_t *worker_maps;
@@ -109,7 +109,7 @@ typedef struct application_
   app_listener_t *listeners;
 
   /*
-   * TLS Specific
+   * TLS & QUIC Specific
    */
 
   /** Certificate to be used for listen sessions */
@@ -120,6 +120,8 @@ typedef struct application_
 
   /** Preferred tls engine */
   u8 tls_engine;
+
+  u64 *quicly_ctx;
 
 } application_t;
 
@@ -195,10 +197,10 @@ u8 application_has_global_scope (application_t * app);
 void application_setup_proxy (application_t * app);
 void application_remove_proxy (application_t * app);
 
-segment_manager_properties_t *application_get_segment_manager_properties (u32
-									  app_index);
+segment_manager_props_t *application_get_segment_manager_properties (u32
+								     app_index);
 
-segment_manager_properties_t
+segment_manager_props_t
   * application_segment_manager_properties (application_t * app);
 
 /*
@@ -223,6 +225,7 @@ int app_worker_init_connected (app_worker_t * app_wrk, session_t * s);
 int app_worker_connect_notify (app_worker_t * app_wrk, session_t * s,
 			       u32 opaque);
 int app_worker_close_notify (app_worker_t * app_wrk, session_t * s);
+int app_worker_reset_notify (app_worker_t * app_wrk, session_t * s);
 int app_worker_builtin_rx (app_worker_t * app_wrk, session_t * s);
 segment_manager_t *app_worker_get_listen_segment_manager (app_worker_t *,
 							  session_t *);

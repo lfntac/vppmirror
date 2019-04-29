@@ -114,7 +114,7 @@ class TestVxlanGpe(BridgeDomain, VppTestCase):
                 vni=vni,
                 is_add=is_add)
             if r.sw_if_index == 0xffffffff:
-                raise "bad sw_if_index"
+                raise ValueError("bad sw_if_index: ~0")
 
     @classmethod
     def add_shared_mcast_dst_load(cls):
@@ -243,13 +243,14 @@ class TestVxlanGpe(BridgeDomain, VppTestCase):
     #  @param self The object pointer.
     def tearDown(self):
         super(TestVxlanGpe, self).tearDown()
-        if not self.vpp_dead:
-            self.logger.info(self.vapi.cli("show bridge-domain 11 detail"))
-            self.logger.info(self.vapi.cli("show bridge-domain 12 detail"))
-            self.logger.info(self.vapi.cli("show bridge-domain 13 detail"))
-            self.logger.info(self.vapi.cli("show int"))
-            self.logger.info(self.vapi.cli("show vxlan-gpe"))
-            self.logger.info(self.vapi.cli("show trace"))
+
+    def show_commands_at_teardown(self):
+        self.logger.info(self.vapi.cli("show bridge-domain 11 detail"))
+        self.logger.info(self.vapi.cli("show bridge-domain 12 detail"))
+        self.logger.info(self.vapi.cli("show bridge-domain 13 detail"))
+        self.logger.info(self.vapi.cli("show int"))
+        self.logger.info(self.vapi.cli("show vxlan-gpe"))
+        self.logger.info(self.vapi.cli("show trace"))
 
 
 if __name__ == '__main__':

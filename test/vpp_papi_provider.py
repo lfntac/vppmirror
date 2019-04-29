@@ -12,23 +12,7 @@ from collections import deque
 from six import moves, iteritems
 from vpp_papi import VPP, mac_pton
 from hook import Hook
-from vpp_l2 import L2_PORT_TYPE
-
-# from vnet/vnet/mpls/mpls_types.h
-MPLS_IETF_MAX_LABEL = 0xfffff
-MPLS_LABEL_INVALID = MPLS_IETF_MAX_LABEL + 1
-
-
-class L2_VTR_OP:
-    L2_DISABLED = 0
-    L2_PUSH_1 = 1
-    L2_PUSH_2 = 2
-    L2_POP_1 = 3
-    L2_POP_2 = 4
-    L2_TRANSLATE_1_1 = 5
-    L2_TRANSLATE_1_2 = 6
-    L2_TRANSLATE_2_1 = 7
-    L2_TRANSLATE_2_2 = 8
+from vpp_ip_route import MPLS_IETF_MAX_LABEL, MPLS_LABEL_INVALID
 
 
 class QOS_SOURCE:
@@ -84,7 +68,7 @@ defaultmapping = {
     'gbp_subnet_add_del': {'sw_if_index': 4294967295, 'epg_id': 65535, },
     'geneve_add_del_tunnel': {'mcast_sw_if_index': 4294967295, 'is_add': 1,
                               'decap_next_index': 4294967295, },
-    'gre_add_del_tunnel': {'instance': 4294967295, 'is_add': 1, },
+    'gre_tunnel_add_del': {'instance': 4294967295, 'is_add': 1, },
     'gtpu_add_del_tunnel': {'is_add': 1, 'mcast_sw_if_index': 4294967295,
                             'decap_next_index': 4294967295, },
     'input_acl_set_interface': {'ip4_table_index': 4294967295,
@@ -114,6 +98,8 @@ defaultmapping = {
     'ipsec_tunnel_if_add_del': {'is_add': 1, 'anti_replay': 1, },
     'l2_emulation': {'enable': 1, },
     'l2fib_add_del': {'is_add': 1, },
+    'lb_conf': {'sticky_buckets_per_core': 4294967295,
+                'flow_timeout': 4294967295},
     'lisp_add_del_adjacency': {'is_add': 1, },
     'lisp_add_del_local_eid': {'is_add': 1, },
     'lisp_add_del_locator': {'priority': 1, 'weight': 1, 'is_add': 1, },
@@ -136,23 +122,22 @@ defaultmapping = {
     'mpls_tunnel_dump': {'sw_if_index': 4294967295, },
     'nat44_add_del_address_range': {'is_add': 1, 'vrf_id': 4294967295, },
     'nat44_add_del_identity_mapping': {'ip': b'0', 'sw_if_index': 4294967295,
-                                       'addr_only': 1, 'is_add': 1, },
+                                       'is_add': 1, },
     'nat44_add_del_interface_addr': {'is_add': 1, },
     'nat44_add_del_lb_static_mapping': {'is_add': 1, },
     'nat44_add_del_static_mapping': {'external_sw_if_index': 4294967295,
-                                     'addr_only': 1, 'is_add': 1, },
-    'nat44_del_session': {'is_in': 1, },
-    'nat44_interface_add_del_feature': {'is_inside': 1, 'is_add': 1, },
-    'nat44_interface_add_del_output_feature': {'is_inside': 1, 'is_add': 1, },
+                                     'is_add': 1, },
+    'nat44_interface_add_del_feature': {'is_add': 1, },
+    'nat44_interface_add_del_output_feature': {'is_add': 1, },
     'nat44_lb_static_mapping_add_del_local': {'is_add': 1, },
-    'nat64_add_del_interface': {'is_inside': 1, 'is_add': 1, },
+    'nat64_add_del_interface': {'is_add': 1, },
     'nat64_add_del_interface_addr': {'is_add': 1, },
     'nat64_add_del_pool_addr_range': {'vrf_id': 4294967295, 'is_add': 1, },
     'nat64_add_del_prefix': {'is_add': 1, },
     'nat64_add_del_static_bib': {'is_add': 1, },
     'nat64_bib_dump': {'protocol': 255, },
     'nat64_st_dump': {'protocol': 255, },
-    'nat66_add_del_interface': {'is_inside': 1, 'is_add': 1, },
+    'nat66_add_del_interface': {'is_add': 1, },
     'nat66_add_del_static_mapping': {'is_add': 1, },
     'nat_det_add_del_map': {'is_add': 1, },
     'nat_ha_resync': {'want_resync_event': 1, },
@@ -184,6 +169,7 @@ defaultmapping = {
     'svs_route_add_del': {'is_add': 1, },
     'svs_table_add_del': {'is_add': 1, },
     'sw_interface_add_del_address': {'is_add': 1, },
+    'sw_interface_dump': {'sw_if_index': 4294967295, },
     'sw_interface_ip6nd_ra_prefix': {'val_lifetime': 4294967295,
                                      'pref_lifetime': 4294967295, },
     'sw_interface_set_ip_directed_broadcast': {'enable': 1, },
@@ -239,8 +225,16 @@ class VppPapiProvider(object):
         if 'VPP_API_DIR' not in os.environ:
             os.environ['VPP_API_DIR'] = os.getenv('VPP_INSTALL_PATH')
 
+        use_socket = False
+        try:
+            if os.environ['SOCKET'] == '1':
+                use_socket = True
+        except:
+            pass
         self.vpp = VPP(logger=test_class.logger,
-                       read_timeout=read_timeout)
+                       read_timeout=read_timeout,
+                       use_socket=use_socket,
+                       server_address=test_class.api_sock)
         self._events = deque()
 
     def __enter__(self):
@@ -617,15 +611,14 @@ class VppPapiProvider(object):
              }
         )
 
-    def gre_add_del_tunnel(self,
-                           src_address,
-                           dst_address,
+    def gre_tunnel_add_del(self,
+                           src,
+                           dst,
                            outer_fib_id=0,
                            tunnel_type=0,
                            instance=0xFFFFFFFF,
                            session_id=0,
-                           is_add=1,
-                           is_ip6=0):
+                           is_add=1):
         """ Add a GRE tunnel
 
         :param src_address:
@@ -633,21 +626,23 @@ class VppPapiProvider(object):
         :param outer_fib_id:  (Default value = 0)
         :param tunnel_type:  (Default value = 0)
         :param instance:  (Default value = 0xFFFFFFFF)
-        :param session_id: (Defalt value = 0)
+        :param session_id: (Default value = 0)
         :param is_add:  (Default value = 1)
         :param is_ipv6:  (Default value = 0)
         """
 
         return self.api(
-            self.papi.gre_add_del_tunnel,
+            self.papi.gre_tunnel_add_del,
             {'is_add': is_add,
-             'is_ipv6': is_ip6,
-             'tunnel_type': tunnel_type,
-             'instance': instance,
-             'src_address': src_address,
-             'dst_address': dst_address,
-             'outer_fib_id': outer_fib_id,
-             'session_id': session_id}
+             'tunnel':
+             {
+                 'type': tunnel_type,
+                 'instance': instance,
+                 'src': src,
+                 'dst': dst,
+                 'outer_fib_id': outer_fib_id,
+                 'session_id': session_id}
+             }
         )
 
     def udp_encap_add(self,
@@ -767,35 +762,35 @@ class VppPapiProvider(object):
     def nat44_interface_add_del_feature(
             self,
             sw_if_index,
-            is_inside=1,
-            is_add=1):
+            is_add=1,
+            flags=0):
         """Enable/disable NAT44 feature on the interface
 
         :param sw_if_index: Software index of the interface
-        :param is_inside: 1 if inside, 0 if outside (Default value = 1)
         :param is_add: 1 if add, 0 if delete (Default value = 1)
+        :param flags: NAT_IS_INSIDE if inside else outside
         """
         return self.api(
             self.papi.nat44_interface_add_del_feature,
             {'is_add': is_add,
-             'is_inside': is_inside,
+             'flags': flags,
              'sw_if_index': sw_if_index})
 
     def nat44_interface_add_del_output_feature(
             self,
             sw_if_index,
-            is_inside=1,
-            is_add=1):
+            is_add=1,
+            flags=0):
         """Enable/disable NAT44 output feature on the interface
 
         :param sw_if_index: Software index of the interface
-        :param is_inside: 1 if inside, 0 if outside (Default value = 1)
         :param is_add: 1 if add, 0 if delete (Default value = 1)
+        :param flags: NAT_IS_INSIDE if inside else outside
         """
         return self.api(
             self.papi.nat44_interface_add_del_output_feature,
             {'is_add': is_add,
-             'is_inside': is_inside,
+             'flags': flags,
              'sw_if_index': sw_if_index})
 
     def nat44_add_del_static_mapping(
@@ -805,14 +800,11 @@ class VppPapiProvider(object):
             external_sw_if_index=0xFFFFFFFF,
             local_port=0,
             external_port=0,
-            addr_only=1,
             vrf_id=0,
             protocol=0,
-            twice_nat=0,
-            self_twice_nat=0,
-            out2in_only=0,
-            tag="",
-            is_add=1):
+            is_add=1,
+            flags=0,
+            tag=""):
         """Add/delete NAT44 static mapping
 
         :param local_ip: Local IP address
@@ -820,31 +812,23 @@ class VppPapiProvider(object):
         :param external_sw_if_index: External interface instead of IP address
         :param local_port: Local port number (Default value = 0)
         :param external_port: External port number (Default value = 0)
-        :param addr_only: 1 if address only mapping, 0 if address and port
         :param vrf_id: VRF ID
         :param protocol: IP protocol (Default value = 0)
-        :param twice_nat: 1 if translate external host address and port
-        :param self_twice_nat: 1 if translate external host address and port
-                               whenever external host address equals
-                               local address of internal host
-        :param out2in_only: if 1 rule is matching only out2in direction
-        :param tag: Opaque string tag
+        :param flags: NAT configuration flags
         :param is_add: 1 if add, 0 if delete (Default value = 1)
+        :param tag: Opaque string tag
         """
         return self.api(
             self.papi.nat44_add_del_static_mapping,
             {'is_add': is_add,
-             'addr_only': addr_only,
+             'flags': flags,
              'local_ip_address': local_ip,
              'external_ip_address': external_ip,
+             'protocol': protocol,
              'local_port': local_port,
              'external_port': external_port,
              'external_sw_if_index': external_sw_if_index,
              'vrf_id': vrf_id,
-             'protocol': protocol,
-             'twice_nat': twice_nat,
-             'self_twice_nat': self_twice_nat,
-             'out2in_only': out2in_only,
              'tag': tag})
 
     def nat44_add_del_identity_mapping(
@@ -852,7 +836,7 @@ class VppPapiProvider(object):
             ip=b'0',
             sw_if_index=0xFFFFFFFF,
             port=0,
-            addr_only=1,
+            flags=0,
             vrf_id=0,
             protocol=0,
             tag='',
@@ -862,7 +846,7 @@ class VppPapiProvider(object):
         :param ip: IP address (Default value = 0)
         :param sw_if_index: Interface instead of IP address
         :param port: Port number (Default value = 0)
-        :param addr_only: 1 if address only mapping, 0 if address and port
+        :param flags: NAT configuration flags (NAT_IS_ADDR_ONLY)
         :param vrf_id: VRF ID
         :param protocol: IP protocol (Default value = 0)
         :param tag: Opaque string tag
@@ -871,13 +855,13 @@ class VppPapiProvider(object):
         return self.api(
             self.papi.nat44_add_del_identity_mapping,
             {'is_add': is_add,
-             'addr_only': addr_only,
+             'flags': flags,
              'ip_address': ip,
+             'protocol': protocol,
              'port': port,
              'sw_if_index': sw_if_index,
              'vrf_id': vrf_id,
-             'tag': tag,
-             'protocol': protocol})
+             'tag': tag})
 
     def nat44_add_del_address_range(
             self,
@@ -885,73 +869,69 @@ class VppPapiProvider(object):
             last_ip_address,
             is_add=1,
             vrf_id=0xFFFFFFFF,
-            twice_nat=0):
+            flags=0):
         """Add/del NAT44 address range
 
         :param first_ip_address: First IP address
         :param last_ip_address: Last IP address
         :param vrf_id: VRF id for the address range
-        :param twice_nat: twice NAT address for extenal hosts
         :param is_add: 1 if add, 0 if delete (Default value = 1)
+        :param flags: NAT configuration flags (NAT_IS_TWICE_NAT)
         """
         return self.api(
             self.papi.nat44_add_del_address_range,
             {'first_ip_address': first_ip_address,
              'last_ip_address': last_ip_address,
              'vrf_id': vrf_id,
-             'twice_nat': twice_nat,
-             'is_add': is_add})
+             'is_add': is_add,
+             'flags': flags})
 
     def nat44_add_del_interface_addr(
             self,
             sw_if_index,
-            twice_nat=0,
+            flags=0,
             is_add=1):
         """Add/del NAT44 address from interface
 
         :param sw_if_index: Software index of the interface
-        :param twice_nat: twice NAT address for extenal hosts
+        :param flags: NAT configuration flags (NAT_IS_TWICE_NAT)
         :param is_add: 1 if add, 0 if delete (Default value = 1)
         """
         return self.api(
             self.papi.nat44_add_del_interface_addr,
             {'is_add': is_add,
              'sw_if_index': sw_if_index,
-             'twice_nat': twice_nat})
+             'flags': flags})
 
     def nat44_add_del_lb_static_mapping(
             self,
             external_addr,
             external_port,
             protocol,
-            twice_nat=0,
-            self_twice_nat=0,
-            out2in_only=0,
             tag='',
             affinity=0,
             local_num=0,
             locals=[],
+            flags=0,
             is_add=1):
         """Add/delete NAT44 load balancing static mapping
 
-        :param twice_nat: 1 if translate external host address and port
         :param tag: Opaque string tag
         :param affinity: if 0 disabled, otherwise client IP affinity timeout
+        :param flags: NAT configuration flags (NAT_IS_TWICE_NAT)
         :param is_add - 1 if add, 0 if delete
         """
         return self.api(
             self.papi.nat44_add_del_lb_static_mapping,
             {'is_add': is_add,
+             'flags': flags,
              'external_addr': external_addr,
              'external_port': external_port,
              'protocol': protocol,
-             'twice_nat': twice_nat,
-             'self_twice_nat': self_twice_nat,
-             'out2in_only': out2in_only,
-             'tag': tag,
              'affinity': affinity,
              'local_num': local_num,
-             'locals': locals})
+             'locals': locals,
+             'tag': tag})
 
     def nat44_lb_static_mapping_add_del_local(
             self,
@@ -965,7 +945,7 @@ class VppPapiProvider(object):
             is_add=1):
         """Add/delete NAT44 load-balancing static mapping rule backend
 
-        :param external_addr: external IPv4 address of the servic
+        :param external_addr: external IPv4 address of the service
         :param external_port: external L4 port number of the service
         :param local_addr: IPv4 address of the internal node
         :param local_port: L4 port number of the internal node
@@ -992,7 +972,7 @@ class VppPapiProvider(object):
             port,
             protocol,
             vrf_id=0,
-            is_in=1,
+            flags=0,
             ext_host_address=None,
             ext_host_port=0):
         """Delete NAT44 session
@@ -1001,29 +981,19 @@ class VppPapiProvider(object):
         :param por: port number
         :param protocol: IP protocol number
         :param vrf_id: VRF ID
-        :param is_in: 1 if inside network addres and port pari, 0 if outside
+        :param flags: NAT configuration flags (NAT_IS_INSIDE)
         :param ext_host_address: external host IPv4 address
         :param ext_host_port: external host port
         """
-        if ext_host_address is None:
-            return self.api(
-                self.papi.nat44_del_session,
-                {'address': addr,
-                 'port': port,
-                 'protocol': protocol,
-                 'vrf_id': vrf_id,
-                 'is_in': is_in})
-        else:
-            return self.api(
-                self.papi.nat44_del_session,
-                {'address': addr,
-                 'port': port,
-                 'protocol': protocol,
-                 'vrf_id': vrf_id,
-                 'is_in': is_in,
-                 'ext_host_valid': 1,
-                 'ext_host_address': ext_host_address,
-                 'ext_host_port': ext_host_port})
+        return self.api(
+            self.papi.nat44_del_session,
+            {'address': addr,
+             'protocol': protocol,
+             'port': port,
+             'vrf_id': vrf_id,
+             'flags': flags,
+             'ext_host_address': ext_host_address,
+             'ext_host_port': ext_host_port})
 
     def nat44_forwarding_enable_disable(
             self,
@@ -1035,56 +1005,6 @@ class VppPapiProvider(object):
         return self.api(
             self.papi.nat44_forwarding_enable_disable,
             {'enable': enable})
-
-    def nat_det_add_del_map(
-            self,
-            in_addr,
-            in_plen,
-            out_addr,
-            out_plen,
-            is_add=1):
-        """Add/delete deterministic NAT mapping
-
-        :param is_add - 1 if add, 0 if delete
-        :param in_addr - inside IP address
-        :param in_plen - inside IP address prefix length
-        :param out_addr - outside IP address
-        :param out_plen - outside IP address prefix length
-        """
-        return self.api(
-            self.papi.nat_det_add_del_map,
-            {'is_add': is_add,
-             'is_nat44': 1,
-             'in_addr': in_addr,
-             'in_plen': in_plen,
-             'out_addr': out_addr,
-             'out_plen': out_plen})
-
-    def nat_det_forward(
-            self,
-            in_addr):
-        """Get outside address and port range from inside address
-
-        :param in_addr - inside IP address
-        """
-        return self.api(
-            self.papi.nat_det_forward,
-            {'in_addr': in_addr,
-             'is_nat44': 1})
-
-    def nat_det_reverse(
-            self,
-            out_addr,
-            out_port):
-        """Get inside address from outside address and port
-
-        :param out_addr - outside IP address
-        :param out_port - outside port
-        """
-        return self.api(
-            self.papi.nat_det_reverse,
-            {'out_addr': out_addr,
-             'out_port': out_port})
 
     def nat_det_map_dump(self):
         """Dump deterministic NAT mappings
@@ -1102,56 +1022,6 @@ class VppPapiProvider(object):
         return self.api(
             self.papi.nat_set_mss_clamping,
             {'enable': enable, 'mss_value': mss_value})
-
-    def nat_det_close_session_in(
-            self,
-            in_addr,
-            in_port,
-            ext_addr,
-            ext_port):
-        """Close deterministic NAT session using inside address and port
-
-        :param in_addr - inside IP address
-        :param in_port - inside port
-        :param ext_addr - external host IP address
-        :param ext_port - external host port
-        """
-        return self.api(
-            self.papi.nat_det_close_session_in,
-            {'in_addr': in_addr,
-             'in_port': in_port,
-             'ext_addr': ext_addr,
-             'ext_port': ext_port,
-             'is_nat44': 1})
-
-    def nat_det_session_dump(
-            self,
-            user_addr):
-        """Dump deterministic NAT sessions belonging to a user
-
-        :param user_addr - inside IP address of the user
-        :return: Dictionary of deterministic NAT sessions
-        """
-        return self.api(
-            self.papi.nat_det_session_dump,
-            {'is_nat44': 1,
-             'user_addr': user_addr})
-
-    def nat64_add_del_interface(
-            self,
-            sw_if_index,
-            is_inside=1,
-            is_add=1):
-        """Enable/disable NAT64 feature on the interface
-           :param sw_if_index: Index of the interface
-           :param is_inside: 1 if inside, 0 if outside (Default value = 1)
-           :param is_add: 1 if add, 0 if delete (Default value = 1)
-        """
-        return self.api(
-            self.papi.nat64_add_del_interface,
-            {'sw_if_index': sw_if_index,
-             'is_inside': is_inside,
-             'is_add': is_add})
 
     def nat64_add_del_static_bib(
             self,
@@ -1194,22 +1064,20 @@ class VppPapiProvider(object):
         """Dump NAT64 session table
 
         :param protocol: IP protocol (Default value = 255, all STs)
-        :returns: Dictionary of NAT64 sesstion table entries
+        :returns: Dictionary of NAT64 session table entries
         """
         return self.api(self.papi.nat64_st_dump, {'proto': protocol})
 
-    def nat64_add_del_prefix(self, prefix, plen, vrf_id=0, is_add=1):
+    def nat64_add_del_prefix(self, prefix, vrf_id=0, is_add=1):
         """Add/del NAT64 prefix
 
         :param prefix: NAT64 prefix
-        :param plen: NAT64 prefix length
         :param vrf_id: VRF id of tenant (Default 0)
         :param is_add: 1 if add, 0 if delete (Default value = 1)
         """
         return self.api(
             self.papi.nat64_add_del_prefix,
             {'prefix': prefix,
-             'prefix_len': plen,
              'vrf_id': vrf_id,
              'is_add': is_add})
 
@@ -1250,18 +1118,19 @@ class VppPapiProvider(object):
     def nat66_add_del_interface(
             self,
             sw_if_index,
-            is_inside=1,
+            flags=0,
             is_add=1):
         """Enable/disable NAT66 feature on the interface
+
            :param sw_if_index: Index of the interface
-           :param is_inside: 1 if inside, 0 if outside (Default value = 1)
+           :param flags: NAT configuration flags (NAT_IS_INSIDE)
            :param is_add: 1 if add, 0 if delete (Default value = 1)
         """
         return self.api(
             self.papi.nat66_add_del_interface,
-            {'sw_if_index': sw_if_index,
-             'is_inside': is_inside,
-             'is_add': is_add})
+            {'is_add': is_add,
+             'flags': flags,
+             'sw_if_index': sw_if_index})
 
     def nat66_add_del_static_mapping(
             self,
@@ -1303,7 +1172,7 @@ class VppPapiProvider(object):
         """Set HA failover (remote settings)
 
         :param addr: failover IP4 address
-        :param port: failvoer UDP port number
+        :param port: failover UDP port number
         :param refresh: number of seconds after which to send session refresh
         """
         return self.api(self.papi.nat_ha_set_failover,
@@ -1838,6 +1707,7 @@ class VppPapiProvider(object):
             is_ipv6=0,
             encap_table_id=0,
             vni=0,
+            mode=1,
             instance=0xFFFFFFFF):
         """
 
@@ -1860,7 +1730,8 @@ class VppPapiProvider(object):
                              'mcast_sw_if_index': mcast_sw_if_index,
                              'encap_table_id': encap_table_id,
                              'vni': vni,
-                             'instance': instance}})
+                             'instance': instance,
+                             "mode": mode}})
 
     def vxlan_gbp_tunnel_dump(self, sw_if_index=0xffffffff):
         return self.api(self.papi.vxlan_gbp_tunnel_dump,
@@ -2369,6 +2240,7 @@ class VppPapiProvider(object):
                                 tunnel_src_address='',
                                 tunnel_dst_address='',
                                 flags=0,
+                                salt=0,
                                 is_add=1):
         """ IPSEC SA add/del
         :param sad_id: security association ID
@@ -2407,6 +2279,7 @@ class VppPapiProvider(object):
                             'data': crypto_key,
                         },
                         'flags': flags,
+                        'salt': salt,
                     }
             })
 
@@ -2484,24 +2357,45 @@ class VppPapiProvider(object):
     def ipsec_tunnel_if_add_del(self, local_ip, remote_ip, local_spi,
                                 remote_spi, crypto_alg, local_crypto_key,
                                 remote_crypto_key, integ_alg, local_integ_key,
-                                remote_integ_key, is_add=1, esn=0,
+                                remote_integ_key, is_add=1, esn=0, salt=0,
                                 anti_replay=1, renumber=0, show_instance=0):
         return self.api(
             self.papi.ipsec_tunnel_if_add_del,
-            {'local_ip': local_ip, 'remote_ip': remote_ip,
-             'local_spi': local_spi, 'remote_spi': remote_spi,
-             'crypto_alg': crypto_alg,
-             'local_crypto_key_len': len(local_crypto_key),
-             'local_crypto_key': local_crypto_key,
-             'remote_crypto_key_len': len(remote_crypto_key),
-             'remote_crypto_key': remote_crypto_key, 'integ_alg': integ_alg,
-             'local_integ_key_len': len(local_integ_key),
-             'local_integ_key': local_integ_key,
-             'remote_integ_key_len': len(remote_integ_key),
-             'remote_integ_key': remote_integ_key, 'is_add': is_add,
-             'esn': esn, 'anti_replay': anti_replay, 'renumber': renumber,
-             'show_instance': show_instance
-             })
+            {
+                'local_ip': local_ip,
+                'remote_ip': remote_ip,
+                'local_spi': local_spi,
+                'remote_spi': remote_spi,
+                'crypto_alg': crypto_alg,
+                'local_crypto_key_len': len(local_crypto_key),
+                'local_crypto_key': local_crypto_key,
+                'remote_crypto_key_len': len(remote_crypto_key),
+                'remote_crypto_key': remote_crypto_key,
+                'integ_alg': integ_alg,
+                'local_integ_key_len': len(local_integ_key),
+                'local_integ_key': local_integ_key,
+                'remote_integ_key_len': len(remote_integ_key),
+                'remote_integ_key': remote_integ_key,
+                'is_add': is_add,
+                'esn': esn,
+                'anti_replay': anti_replay,
+                'renumber': renumber,
+                'show_instance': show_instance,
+                'salt': salt
+            })
+
+    def ipsec_gre_tunnel_add_del(self, local_ip, remote_ip,
+                                 sa_out, sa_in, is_add=1):
+        return self.api(self.papi.ipsec_gre_tunnel_add_del,
+                        {
+                            'is_add': is_add,
+                            'tunnel': {
+                                'src': local_ip,
+                                'dst': remote_ip,
+                                'local_sa_id': sa_out,
+                                'remote_sa_id': sa_in
+                            }
+                        })
 
     def ipsec_select_backend(self, protocol, index):
         return self.api(self.papi.ipsec_select_backend,

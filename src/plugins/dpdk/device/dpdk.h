@@ -68,6 +68,7 @@ extern vlib_node_registration_t admin_up_down_process_node;
   _ ("net_ixgbe_vf", IXGBEVF)     \
   _ ("net_i40e", I40E)            \
   _ ("net_i40e_vf", I40EVF)       \
+  _ ("net_ice", ICE)              \
   _ ("net_virtio", VIRTIO)        \
   _ ("net_enic", ENIC)            \
   _ ("net_vmxnet3", VMXNET3)      \
@@ -392,7 +393,7 @@ typedef struct
   u32 buffers[DPDK_RX_BURST_SZ];
   u16 next[DPDK_RX_BURST_SZ];
   u16 etype[DPDK_RX_BURST_SZ];
-  u8 flags[DPDK_RX_BURST_SZ];
+  u16 flags[DPDK_RX_BURST_SZ];
   vlib_buffer_t buffer_template;
 } dpdk_per_thread_data_t;
 
@@ -503,7 +504,6 @@ format_function_t format_dpdk_flow;
 format_function_t format_dpdk_rss_hf_name;
 format_function_t format_dpdk_rx_offload_caps;
 format_function_t format_dpdk_tx_offload_caps;
-unformat_function_t unformat_dpdk_log_level;
 vnet_flow_dev_ops_function_t dpdk_flow_ops_fn;
 
 clib_error_t *unformat_rss_fn (unformat_input_t * input, uword * rss_fn);

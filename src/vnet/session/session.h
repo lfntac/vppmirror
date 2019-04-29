@@ -21,8 +21,6 @@
 #include <svm/message_queue.h>
 #include <svm/ssvm.h>
 
-#define SESSION_PROXY_LISTENER_INDEX ((u8)~0 - 1)
-
 #define foreach_session_input_error                                    	\
 _(NO_SESSION, "No session drops")                                       \
 _(NO_LISTENER, "No listener for dst port drops")                        \
@@ -49,7 +47,6 @@ typedef struct session_tx_context_
   session_t *s;
   transport_proto_vft_t *transport_vft;
   transport_connection_t *tc;
-  vlib_buffer_t *b;
   u32 max_dequeue;
   u32 snd_space;
   u32 left_to_snd;
@@ -79,9 +76,6 @@ typedef struct session_worker_
 
   /** vlib_time_now last time around the track */
   f64 last_vlib_time;
-
-  /** Per-proto enqueue epoch counters */
-  u64 current_enqueue_epoch[TRANSPORT_N_PROTO];
 
   /** Per-proto vector of sessions to enqueue */
   u32 *session_to_enqueue[TRANSPORT_N_PROTO];
@@ -341,8 +335,11 @@ int session_send_io_evt_to_thread_custom (void *data, u32 thread_index,
 					  session_evt_type_t evt_type);
 void session_send_rpc_evt_to_thread (u32 thread_index, void *fp,
 				     void *rpc_args);
+void session_send_rpc_evt_to_thread_force (u32 thread_index, void *fp,
+					   void *rpc_args);
 transport_connection_t *session_get_transport (session_t * s);
-
+void session_get_endpoint (session_t * s, transport_endpoint_t * tep,
+			   u8 is_lcl);
 
 u8 *format_session (u8 * s, va_list * args);
 uword unformat_session (unformat_input_t * input, va_list * args);
@@ -382,14 +379,21 @@ always_inline u32
 transport_max_rx_enqueue (transport_connection_t * tc)
 {
   session_t *s = session_get (tc->s_index, tc->thread_index);
-  return svm_fifo_max_enqueue (s->rx_fifo);
+  return svm_fifo_max_enqueue_prod (s->rx_fifo);
 }
 
 always_inline u32
 transport_max_tx_dequeue (transport_connection_t * tc)
 {
   session_t *s = session_get (tc->s_index, tc->thread_index);
-  return svm_fifo_max_dequeue (s->tx_fifo);
+  return svm_fifo_max_dequeue_cons (s->tx_fifo);
+}
+
+always_inline u32
+transport_max_rx_dequeue (transport_connection_t * tc)
+{
+  session_t *s = session_get (tc->s_index, tc->thread_index);
+  return svm_fifo_max_dequeue (s->rx_fifo);
 }
 
 always_inline u32
@@ -441,7 +445,8 @@ transport_add_tx_event (transport_connection_t * tc)
 always_inline u64
 listen_session_get_handle (session_t * s)
 {
-  ASSERT (s->session_state == SESSION_STATE_LISTENING);
+  ASSERT (s->session_state == SESSION_STATE_LISTENING ||
+	  session_get_transport_proto (s) == TRANSPORT_PROTO_QUIC);
   return session_handle (s);
 }
 

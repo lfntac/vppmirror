@@ -7,6 +7,7 @@ from vpp_object import VppObject
 from vpp_ip import VppIpAddress
 from vpp_lo_interface import VppLoInterface
 from vpp_papi import MACAddress
+from vpp_sub_interface import L2_VTR_OP
 
 
 class L2_PORT_TYPE:
@@ -22,6 +23,7 @@ class BRIDGE_FLAGS:
     FLOOD = 4
     UU_FLOOD = 8
     ARP_TERM = 16
+    ARP_UFWD = 32
 
 
 def find_bridge_domain(test, bd_id):
@@ -69,7 +71,7 @@ class VppBridgeDomain(VppObject):
 
     def __init__(self, test, bd_id,
                  flood=1, uu_flood=1, forward=1,
-                 learn=1, arp_term=1):
+                 learn=1, arp_term=1, arp_ufwd=0):
         self._test = test
         self.bd_id = bd_id
         self.flood = flood
@@ -77,6 +79,7 @@ class VppBridgeDomain(VppObject):
         self.forward = forward
         self.learn = learn
         self.arp_term = arp_term
+        self.arp_ufwd = arp_ufwd
 
     def add_vpp_config(self):
         self._test.vapi.bridge_domain_add_del(bd_id=self.bd_id,
@@ -84,7 +87,9 @@ class VppBridgeDomain(VppObject):
                                               uu_flood=self.uu_flood,
                                               forward=self.forward,
                                               learn=self.learn,
-                                              arp_term=self.arp_term, is_add=1)
+                                              arp_term=self.arp_term,
+                                              arp_ufwd=self.arp_ufwd,
+                                              is_add=1)
         self._test.registry.register(self, self._test.logger)
 
     def remove_vpp_config(self):
@@ -92,9 +97,6 @@ class VppBridgeDomain(VppObject):
 
     def query_vpp_config(self):
         return find_bridge_domain(self._test, self.bd_id)
-
-    def __str__(self):
-        return self.object_id()
 
     def object_id(self):
         return "bridge-domain-%d" % (self.bd_id)
@@ -125,9 +127,6 @@ class VppBridgeDomainPort(VppObject):
                                        self.bd.bd_id,
                                        self.itf.sw_if_index)
 
-    def __str__(self):
-        return self.object_id()
-
     def object_id(self):
         return "BD-Port-%s-%s" % (self.bd, self.itf)
 
@@ -156,9 +155,6 @@ class VppBridgeDomainArpEntry(VppObject):
                                             self.bd.bd_id,
                                             self.mac.packed,
                                             self.ip.address)
-
-    def __str__(self):
-        return self.object_id()
 
     def object_id(self):
         return "BD-Arp-Entry-%s-%s-%s" % (self.bd, self.mac, self.ip.address)
@@ -203,8 +199,31 @@ class VppL2FibEntry(VppObject):
                                  self.mac.packed,
                                  self.itf.sw_if_index)
 
-    def __str__(self):
-        return self.object_id()
-
     def object_id(self):
         return "L2-Fib-Entry-%s-%s-%s" % (self.bd, self.mac, self.itf)
+
+
+class VppL2Vtr(VppObject):
+
+    def __init__(self, test, itf, op):
+        self._test = test
+        self.itf = itf
+        self.op = op
+
+    def add_vpp_config(self):
+        self.itf.set_vtr(self.op)
+        self._test.registry.register(self, self._test.logger)
+
+    def remove_vpp_config(self):
+        self.itf.set_vtr(L2_VTR_OP.L2_DISABLED)
+
+    def query_vpp_config(self):
+        ds = self._test.vapi.sw_interface_dump()
+        d = self.itf.get_interface_config_from_dump(ds)
+
+        if d is not None:
+            return (d.vtr_op == self.op)
+        return False
+
+    def object_id(self):
+        return "L2-vtr-%s-%d" % (str(self.itf), self.op)

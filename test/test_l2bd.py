@@ -94,6 +94,10 @@ class TestL2bd(VppTestCase):
             super(TestL2bd, cls).tearDownClass()
             raise
 
+    @classmethod
+    def tearDownClass(cls):
+        super(TestL2bd, cls).tearDownClass()
+
     def setUp(self):
         """
         Clear trace and packet infos before running each test.
@@ -252,7 +256,7 @@ class TestL2bd(VppTestCase):
         Test scenario:
             1.config
                 MAC learning enabled
-                learn 100 MAC enries
+                learn 100 MAC entries
                 3 interfaces: untagged, dot1q, dot1ad (dot1q used instead of
                 dot1ad in the first version)
 
@@ -269,7 +273,7 @@ class TestL2bd(VppTestCase):
          Test scenario:
             1.config
                 MAC learning enabled
-                learn 100 MAC enries
+                learn 100 MAC entries
                 3 interfaces: untagged, dot1q, dot1ad (dot1q used instead of
                 dot1ad in the first version)
 

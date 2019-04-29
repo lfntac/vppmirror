@@ -25,6 +25,10 @@ class TestClassifier(VppTestCase):
         super(TestClassifier, cls).setUpClass()
         cls.acl_active_table = ''
 
+    @classmethod
+    def tearDownClass(cls):
+        super(TestClassifier, cls).tearDownClass()
+
     def setUp(self):
         """
         Perform test setup before test case.
@@ -71,10 +75,6 @@ class TestClassifier(VppTestCase):
     def tearDown(self):
         """Run standard test teardown and acl related log."""
         if not self.vpp_dead:
-            self.logger.info(self.vapi.ppcli("show inacl type ip4"))
-            self.logger.info(self.vapi.ppcli("show outacl type ip4"))
-            self.logger.info(self.vapi.cli("show classify table verbose"))
-            self.logger.info(self.vapi.cli("show ip fib"))
             if self.acl_active_table == 'ip_out':
                 self.output_acl_set_interface(
                     self.pg0, self.acl_tbl_idx.get(self.acl_active_table), 0)
@@ -88,6 +88,12 @@ class TestClassifier(VppTestCase):
                 intf.admin_down()
 
         super(TestClassifier, self).tearDown()
+
+    def show_commands_at_teardown(self):
+        self.logger.info(self.vapi.ppcli("show inacl type ip4"))
+        self.logger.info(self.vapi.ppcli("show outacl type ip4"))
+        self.logger.info(self.vapi.cli("show classify table verbose"))
+        self.logger.info(self.vapi.cli("show ip fib"))
 
     def config_pbr_fib_entry(self, intf, is_add=1):
         """Configure fib entry to route traffic toward PBR VRF table
@@ -323,6 +329,14 @@ class TestClassifier(VppTestCase):
 class TestClassifierIP(TestClassifier):
     """ Classifier IP Test Case """
 
+    @classmethod
+    def setUpClass(cls):
+        super(TestClassifierIP, cls).setUpClass()
+
+    @classmethod
+    def tearDownClass(cls):
+        super(TestClassifierIP, cls).tearDownClass()
+
     def test_iacl_src_ip(self):
         """ Source IP iACL test
 
@@ -418,6 +432,14 @@ class TestClassifierIP(TestClassifier):
 
 class TestClassifierUDP(TestClassifier):
     """ Classifier UDP proto Test Case """
+
+    @classmethod
+    def setUpClass(cls):
+        super(TestClassifierUDP, cls).setUpClass()
+
+    @classmethod
+    def tearDownClass(cls):
+        super(TestClassifierUDP, cls).tearDownClass()
 
     def test_iacl_proto_udp(self):
         """ UDP protocol iACL test
@@ -558,6 +580,14 @@ class TestClassifierUDP(TestClassifier):
 
 class TestClassifierTCP(TestClassifier):
     """ Classifier TCP proto Test Case """
+
+    @classmethod
+    def setUpClass(cls):
+        super(TestClassifierTCP, cls).setUpClass()
+
+    @classmethod
+    def tearDownClass(cls):
+        super(TestClassifierTCP, cls).tearDownClass()
 
     def test_iacl_proto_tcp(self):
         """ TCP protocol iACL test
@@ -700,6 +730,14 @@ class TestClassifierTCP(TestClassifier):
 class TestClassifierIPOut(TestClassifier):
     """ Classifier output IP Test Case """
 
+    @classmethod
+    def setUpClass(cls):
+        super(TestClassifierIPOut, cls).setUpClass()
+
+    @classmethod
+    def tearDownClass(cls):
+        super(TestClassifierIPOut, cls).tearDownClass()
+
     def test_acl_ip_out(self):
         """ Output IP ACL test
 
@@ -735,6 +773,14 @@ class TestClassifierIPOut(TestClassifier):
 class TestClassifierMAC(TestClassifier):
     """ Classifier MAC Test Case """
 
+    @classmethod
+    def setUpClass(cls):
+        super(TestClassifierMAC, cls).setUpClass()
+
+    @classmethod
+    def tearDownClass(cls):
+        super(TestClassifierMAC, cls).tearDownClass()
+
     def test_acl_mac(self):
         """ MAC ACL test
 
@@ -769,6 +815,14 @@ class TestClassifierMAC(TestClassifier):
 
 class TestClassifierPBR(TestClassifier):
     """ Classifier PBR Test Case """
+
+    @classmethod
+    def setUpClass(cls):
+        super(TestClassifierPBR, cls).setUpClass()
+
+    @classmethod
+    def tearDownClass(cls):
+        super(TestClassifierPBR, cls).tearDownClass()
 
     def test_acl_pbr(self):
         """ IP PBR test
